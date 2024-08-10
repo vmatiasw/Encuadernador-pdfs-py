@@ -1,34 +1,29 @@
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import A4 # type: ignore
-from reportlab.lib.units import mm # type: ignore
-from reportlab.pdfgen import canvas # type: ignore
 import os
+import tempfile
 
 MIN_PAPERS_PER_BOOKLET = 8
 MAX_PAPERS_PER_BOOKLET = 12
 WIDTH, HEIGHT = A4
-TEMP_DIR = "temp"
+TEMP_DIR = tempfile.mkdtemp()
 
 class PDFBookletCreator:
-    def __init__(self, input_pdf, output_pdf, papers_per_booklet = 10, margin = 10.0):
-        self.check_parameters(input_pdf, output_pdf, papers_per_booklet, margin)
-        
-        # creamos un directorio temporal para almacenar los archivos temporales
-        if not os.path.exists(TEMP_DIR):
-            os.makedirs(TEMP_DIR)
+    def __init__(self, input_pdf, output_pdf, papers_per_booklet = 10):
+        self._check_parameters(input_pdf, output_pdf, papers_per_booklet)
 
         # Constantes
         self.INPUT_PDF = input_pdf
         self.OUTPUT_PDF = output_pdf
         self.PAGES_PER_BOOKLET = papers_per_booklet * 4
-        self.MARGIN = margin
         self.WIDTH = WIDTH
         self.HEIGHT = HEIGHT
+
         # Variables
         self.working_pdf = os.path.join(TEMP_DIR, "working.pdf")
         self.working_pdf_reader = PdfReader(self.INPUT_PDF)
     
-    def check_parameters(self, input_pdf, output_pdf, papers_per_booklet, margin):
+    def _check_parameters(self, input_pdf, output_pdf, papers_per_booklet):
 
         # input_pdf
         if not os.path.exists(input_pdf):
@@ -45,12 +40,6 @@ class PDFBookletCreator:
             raise TypeError("El número de hojas por cuadernillo debe ser un número entero.")
         if papers_per_booklet < MIN_PAPERS_PER_BOOKLET or MAX_PAPERS_PER_BOOKLET < papers_per_booklet:
             raise ValueError(f"El número de hojas por cuadernillo debe estar entre {MIN_PAPERS_PER_BOOKLET} y {MAX_PAPERS_PER_BOOKLET}.")
-
-        # margin
-        if not isinstance(margin, (int, float)):
-            raise TypeError("El margen debe ser un número.")
-        if margin < 0:
-            raise ValueError("El margen debe ser un número positivo.")
         
     def _add_blank_pages_to_writer(self, writer, num_pages = 1):
         '''
@@ -61,7 +50,7 @@ class PDFBookletCreator:
 
     def _add_blank_pages(self):
         '''
-        Agrega 2 páginas en blanco al inicio y final del documento de self.input_pdf en self.working_pdf.
+        Agrega 2 páginas en blanco al inicio y final del self.working_pdf.
         Luego, agrega paginas en blanco al final hasta que la cantidad de hojas sea multiplo de self.pages_per_booklet.
         '''
         reader = self.working_pdf_reader
@@ -85,51 +74,68 @@ class PDFBookletCreator:
             self._add_blank_pages_to_writer(writer, pages_to_complete)
 
         # Guardar el documento final
-        self.update_working_pdf(writer)
+        self._update_working_pdf(writer)
 
-    def update_working_pdf(self,writer):
+    def _update_working_pdf(self,writer):
         with open(self.working_pdf, "wb") as output_file:
             writer.write(output_file)
         self.working_pdf_reader = PdfReader(self.working_pdf)
 
-    
-    
-    # FIXME: El codigo de abajo no esta revisado ni completado
-   
-    def create_booklet(self):
-        
-        self._add_blank_pages()
-
-        reader = PdfReader(self.working_pdf)
-        writer = PdfWriter()
+    def _create_booklet(self):
+        '''
+        Separa en cuadernillos de self.PAGES_PER_BOOKLET carillas el self.working_pdf.
+        '''
+        reader = self.working_pdf_reader
         total_pages = len(reader.pages)
-        width, height = A4
+        writer = PdfWriter()
 
-        # Crear cuadernillos
-        for start in range(0, total_pages, self.PAGES_PER_BOOKLET):
-            end = min(start + self.PAGES_PER_BOOKLET, total_pages)
-            booklet_pages = [reader.pages[i] for i in range(start, end)]
-            
-            for i in range(0, len(booklet_pages), 4):
-                # Crear una nueva hoja A4 con 4 carillas
-                c = canvas.Canvas("temp.pdf", pagesize=A4)
-                for j in range(4):
-                    if i + j < len(booklet_pages):
-                        page = booklet_pages[i + j]
-                        c.setPageSize(A4)
-                        c.drawImage(page, self.MARGIN * mm, self.MARGIN * mm, width / 2 - 2 * self.MARGIN * mm, height / 2 - 2 * self.MARGIN * mm)
-                        c.showPage()
-                c.save()
-                
-                # Agregar la hoja al documento final
-                temp_reader = PdfReader("temp.pdf")
-                writer.add_page(temp_reader.pages[0])
-            
-            os.remove("temp.pdf")
+        assert self.PAGES_PER_BOOKLET % 4 == 0 and total_pages % self.PAGES_PER_BOOKLET == 0 , "El número de hojas por cuadernillo debe ser múltiplo de 4 y el número total de hojas debe ser múltiplo de self.PAGES_PER_BOOKLET."
+
+        for i in range(0, total_pages, self.PAGES_PER_BOOKLET):
+            end = i + self.PAGES_PER_BOOKLET - 1
+            init = i
+            while (init < end):
+                assert init + 1 < total_pages and end - 1 >= 0, "ERROR en _create_booklet"
+                writer.add_page(reader.pages[init + 1])
+                writer.add_page(reader.pages[end - 1])
+                writer.add_page(reader.pages[end].rotate_clockwise(180))
+                writer.add_page(reader.pages[init].rotate_clockwise(180))
+                init += 2
+                end -= 2
         
-        with open(self.OUTPUT_PDF, "wb") as output_file:
-            writer.write(output_file)
+        self._update_working_pdf(writer)
+
+    def get_booklet(self):
+        
+        try:
+            self._add_blank_pages()
+            self._create_booklet()
+
+            with open(self.OUTPUT_PDF, "wb") as output_file:
+                writer = PdfWriter()
+                reader = self.working_pdf_reader
+                for i in range(len(reader.pages)):
+                    writer.add_page(reader.pages[i])
+                writer.write(output_file)
+        finally:
+            if os.path.exists(self.working_pdf):
+                os.remove(self.working_pdf)
+            if os.path.exists(TEMP_DIR):
+                os.rmdir(TEMP_DIR)
+
 
 # Uso de la clase
-creator = PDFBookletCreator("input.pdf", "output_booklet.pdf")
-creator.create_booklet()
+creator = PDFBookletCreator("input.pdf", "output_booklet.pdf", 10)
+creator.get_booklet()
+
+'''
+El código recibe el archivo "input.pdf", agrega dos carillas en blanco al inicio y al final
+y lo transforma en cuadernillos de 10 hojas en orden para imprimir doble faz. 
+Finalmente, toma el resultado y lo guarda en "output_booklet.pdf".
+
+"output_booklet.pdf" debe imprimirse de la siguiente manera:
+2 carillas por hoja, doble faz, en orden de lectura de izquierda a derecha y de arriba 
+hacia abajo.
+Los margenes no se ajustan automáticamente, por lo que es necesario configurarlos en la
+impresora.
+'''
