@@ -124,8 +124,8 @@ def create_booklet():
             assert init + 1 < total_pages and end - 1 >= 0, "ERROR en _create_booklet"
             writer.add_page(reader.pages[init + 1])
             writer.add_page(reader.pages[end - 1])
-            writer.add_page(reader.pages[end].rotate(180))
-            writer.add_page(reader.pages[init].rotate(180))
+            writer.add_page(reader.pages[end])#.rotate(180)) Los rota ya la impresora creo, 
+            writer.add_page(reader.pages[init])#.rotate(180)) solo hace falta el orden.
             init += 2
             end -= 2
     
