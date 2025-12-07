@@ -1,0 +1,13 @@
+services:
+  encuadernador:
+    build: .
+    image: encuadernador-pdfs:latest
+    container_name: encuadernador-pdfs
+    volumes:
+      - ${INPUT_DIR}:/app/input
+      - ${OUTPUT_DIR}:/app/output
+    environment:
+      - INPUT_FILE=${INPUT_FILE}
+      - OUTPUT_FILE=${OUTPUT_FILE}
+      - PAPERS_PER_BOOKLET=${PAPERS_PER_BOOKLET}
+      - COVER_PAGES=${COVER_PAGES}

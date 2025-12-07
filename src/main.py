@@ -4,173 +4,160 @@ import os
 import tempfile
 import sys
 
-MIN_PAPERS_PER_BOOKLET = 6
-MAX_PAPERS_PER_BOOKLET = 12
-WIDTH, HEIGHT = A4
-TEMP_DIR = tempfile.mkdtemp()
 
-INPUT_PDF = ''
-OUTPUT_PDF = ''
-papers_per_booklet = 0
-PAGES_PER_BOOKLET = 0
-
-working_pdf = None
-working_pdf_reader = None
+class BookletProcessor:
+    def __init__(self, input_pdf: str, output_pdf: str, papers_per_booklet: int, cover_pages: int = 0):
+        """        
+        Args:
+            input_pdf: Ruta al archivo PDF de entrada
+            output_pdf: Ruta al archivo PDF de salida
+            papers_per_booklet: Número de hojas por cuadernillo
+            cover_pages: Número de páginas de tapa
+        """
+        self.input_pdf = input_pdf
+        self.output_pdf = output_pdf
+        self.papers_per_booklet = papers_per_booklet
+        self.cover_pages = cover_pages
+        self.pages_per_booklet = papers_per_booklet * 4 # carillas
+        self.width, self.height = A4
+        self.temp_dir = tempfile.mkdtemp()
+        
+        self._validate_parameters()
+        self.reader = PdfReader(input_pdf)
     
-def put_and_check_parameters():
-    global INPUT_PDF, OUTPUT_PDF, papers_per_booklet, PAGES_PER_BOOKLET
+    def _validate_parameters(self):
+        """Valida los parámetros de entrada."""
+        # Validar input_pdf
+        if not os.path.exists(self.input_pdf):
+            raise FileNotFoundError(f"El archivo {self.input_pdf} no existe.")
+        if not self.input_pdf.lower().endswith(".pdf"):
+            raise ValueError("El archivo de entrada debe ser un PDF.")
+        
+        # Validar output_pdf
+        if not self.output_pdf.lower().endswith(".pdf"):
+            raise ValueError("El archivo de salida debe ser un PDF.")
+        
+        # Validar papers_per_booklet
+        if not isinstance(self.papers_per_booklet, int):
+            raise TypeError("El número de hojas por cuadernillo debe ser un número entero.")
+    
+    def _add_blank_pages(self, writer: PdfWriter, num_pages: int):
+        """Agrega páginas en blanco al writer."""
+        for _ in range(num_pages):
+            writer.add_blank_page(self.width, self.height)
+    
+    def _prepare_pages(self) -> PdfWriter:
+        """
+        Agrega páginas de tapa y páginas en blanco para completar cuadernillos.
+        
+        Returns:
+            PdfWriter con las páginas preparadas
+        """
+        writer = PdfWriter()
+        
+        # Agregar páginas de tapa al inicio
+        self._add_blank_pages(writer, self.cover_pages)
+        
+        # Agregar páginas originales
+        for page in self.reader.pages:
+            writer.add_page(page)
+        
+        # Agregar páginas de tapa al final
+        self._add_blank_pages(writer, self.cover_pages)
+        
+        # Completar para que sea múltiplo de pages_per_booklet
+        pages_to_complete = self.pages_per_booklet - len(writer.pages) % self.pages_per_booklet
+        if pages_to_complete != self.pages_per_booklet:
+            self._add_blank_pages(writer, pages_to_complete)
+        
+        return writer
+    
+    def _create_booklet(self, reader: PdfReader) -> PdfWriter:
+        """
+        Reordena las páginas en formato cuadernillo.
+        
+        Args:
+            reader: PdfReader con las páginas preparadas
+            
+        Returns:
+            PdfWriter con las páginas en orden de cuadernillo
+        """
+        total_pages = len(reader.pages)
+        writer = PdfWriter()
+        
+        # Procesar cada cuadernillo
+        for i in range(0, total_pages, self.pages_per_booklet):
+            start = i
+            end = i + self.pages_per_booklet - 1
+            
+            # Reordenar páginas del cuadernillo
+            while start < end:
+                writer.add_page(reader.pages[start + 1])
+                writer.add_page(reader.pages[end - 1])
+                writer.add_page(reader.pages[end])
+                writer.add_page(reader.pages[start])
+                start += 2
+                end -= 2
+        
+        return writer
+    
+    def process(self):
+        """Procesa el PDF completo y genera el cuadernillo."""
+        try:
+            # Preparar páginas
+            prepared_writer = self._prepare_pages()
+            
+            # Crear archivo temporal con páginas preparadas
+            temp_pdf = os.path.join(self.temp_dir, "temp.pdf")
+            with open(temp_pdf, "wb") as f:
+                prepared_writer.write(f)
+            
+            # Crear cuadernillo
+            temp_reader = PdfReader(temp_pdf)
+            booklet_writer = self._create_booklet(temp_reader)
+            
+            # Guardar resultado
+            with open(self.output_pdf, "wb") as f:
+                booklet_writer.write(f)
+                
+        finally:
+            self._cleanup()
+    
+    def _cleanup(self):
+        """Limpia archivos temporales."""
+        if os.path.exists(self.temp_dir):
+            for root, dirs, files in os.walk(self.temp_dir, topdown=False):
+                for file in files:
+                    os.remove(os.path.join(root, file))
+                for dir in dirs:
+                    os.rmdir(os.path.join(root, dir))
+            os.rmdir(self.temp_dir)
 
-    if len(sys.argv) == 1:
-        print("Debe ingresar el archivo de entrada, el archivo de salida y la cantidad de hojas por cuadernillo.")
-        print(f"Ejemplo: python {sys.argv[0]} input.pdf output.pdf 10")
+
+def parse_arguments():
+    """
+    Parsea los argumentos de línea de comandos.
+    
+    Returns:
+        Tupla con (input_pdf, output_pdf, papers_per_booklet, cover_pages)
+    """
+    if len(sys.argv) != 5:
+        print( "Debe ingresar el archivo de entrada, el archivo de salida," \
+               "la cantidad de hojas por cuadernillo y las páginas de tapa.")
+        print(f"Ejemplo: python {sys.argv[0]} input.pdf output.pdf 10 2")
         sys.exit(1)
-
-    if len(sys.argv) != 4:
-        raise ValueError("Cantidad de argumentos incorrecta. Debe ingresar el archivo de entrada, el archivo de salida y la cantidad de hojas por cuadernillo.")
-
-    try:
-        INPUT_PDF = sys.argv[1]
-        OUTPUT_PDF = sys.argv[2]
-        papers_per_booklet = int(sys.argv[3])
-    except ValueError:
-        raise ValueError("El tercer argumento debe ser un número entero que indique las hojas por cuadernillo.")
     
-    PAGES_PER_BOOKLET = papers_per_booklet * 4
+    input_pdf = sys.argv[1]
+    output_pdf = sys.argv[2]
+    papers_per_booklet = int(sys.argv[3])
+    cover_pages = int(sys.argv[4])
+    return input_pdf, output_pdf, papers_per_booklet, cover_pages
 
-    # input_pdf
-    if not os.path.exists(INPUT_PDF):
-        raise FileNotFoundError(f"El archivo {INPUT_PDF} no existe.")
-    if not INPUT_PDF.endswith(".PDF") and not INPUT_PDF.endswith(".pdf"):
-        raise ValueError("El archivo de entrada debe ser un PDF.")
-    
-    # output_pdf
-    if not os.path.exists(OUTPUT_PDF):
-        with open(OUTPUT_PDF, "w") as f:
-            pass
-    if not OUTPUT_PDF.endswith(".PDF") and not OUTPUT_PDF.endswith(".pdf"):
-        raise ValueError("El archivo de salida debe ser un PDF.")
-    
-    # papers_per_booklet
-    if not isinstance(papers_per_booklet, int):
-        raise TypeError("El número de hojas por cuadernillo debe ser un número entero.")
-    if papers_per_booklet < MIN_PAPERS_PER_BOOKLET or MAX_PAPERS_PER_BOOKLET < papers_per_booklet:
-        raise ValueError(f"El número de hojas por cuadernillo debe estar entre {MIN_PAPERS_PER_BOOKLET} y {MAX_PAPERS_PER_BOOKLET}.")
-
-    # Inicializar el lector después de la validación de parámetros
-    global working_pdf_reader, working_pdf
-    working_pdf = os.path.join(TEMP_DIR, "working.pdf")
-    working_pdf_reader = PdfReader(INPUT_PDF)
-
-def _add_blank_pages_to_writer(writer, num_pages = 1):
-    '''
-    Agrega `num_pages` páginas en blanco al final del documento de `writer`.
-    '''
-    global WIDTH, HEIGHT
-
-    for _ in range(num_pages):
-        writer.add_blank_page(WIDTH, HEIGHT)
-
-def add_blank_pages():
-    '''
-    Agrega 2 páginas en blanco al inicio y final del working_pdf.
-    Luego, agrega paginas en blanco al final hasta que la cantidad de hojas sea multiplo de pages_per_booklet.
-    '''
-    global working_pdf_reader, PAGES_PER_BOOKLET
-
-    reader = working_pdf_reader
-    writer = PdfWriter()
-    total_pages = len(reader.pages)
-
-    # Agregar 2 páginas en blanco al inicio
-    _add_blank_pages_to_writer(writer, 2)
-
-    # Agregar las páginas del documento original
-    for i in range(total_pages):
-        writer.add_page(reader.pages[i])
-
-    # Agregar 2 páginas en blanco al final
-    _add_blank_pages_to_writer(writer, 2)
-
-    # Agregar páginas en blanco al final para que working_pdf tenga un 
-    # número de hojas múltiplo de PAGES_PER_BOOKLET
-    pages_to_complete = PAGES_PER_BOOKLET - len(writer.pages) % PAGES_PER_BOOKLET
-    if pages_to_complete != PAGES_PER_BOOKLET:
-        _add_blank_pages_to_writer(writer, pages_to_complete)
-
-    # Guardar el documento final
-    _update_working_pdf(writer)
-
-def _update_working_pdf(writer):
-    global working_pdf_reader
-
-    with open(working_pdf, "wb") as output_file:
-        writer.write(output_file)
-    working_pdf_reader = PdfReader(working_pdf)
-
-def create_booklet():
-    '''
-    Separa en cuadernillos de PAGES_PER_BOOKLET carillas el working_pdf.
-    '''
-    global working_pdf_reader, PAGES_PER_BOOKLET
-
-    reader = working_pdf_reader
-    total_pages = len(reader.pages)
-    writer = PdfWriter()
-    assert PAGES_PER_BOOKLET % 4 == 0 and total_pages % PAGES_PER_BOOKLET == 0 , "El número de hojas por cuadernillo debe ser múltiplo de 4 y el número total de hojas debe ser múltiplo de PAGES_PER_BOOKLET."
-    for i in range(0, total_pages, PAGES_PER_BOOKLET):
-        end = i + PAGES_PER_BOOKLET - 1
-        init = i
-        while (init < end):
-            assert init + 1 < total_pages and end - 1 >= 0, "ERROR en _create_booklet"
-            writer.add_page(reader.pages[init + 1])
-            writer.add_page(reader.pages[end - 1])
-            writer.add_page(reader.pages[end])#.rotate(180)) Los rota ya la impresora creo, 
-            writer.add_page(reader.pages[init])#.rotate(180)) solo hace falta el orden.
-            init += 2
-            end -= 2
-    
-    _update_working_pdf(writer)
-
-def save_booklet():
-    global working_pdf_reader
-    
-    try:
-        with open(OUTPUT_PDF, "wb") as output_file:
-            writer = PdfWriter()
-            reader = working_pdf_reader
-            for i in range(len(reader.pages)):
-                writer.add_page(reader.pages[i])
-            writer.write(output_file)
-    except Exception as e:
-        print(f"Error al guardar el cuadernillo: {e}")
-        raise
-    finally:
-        _cleanup_temp_files()
-
-def _cleanup_temp_files():
-    if os.path.exists(working_pdf):
-        os.remove(working_pdf)
-    if os.path.exists(TEMP_DIR):
-        for root, dirs, files in os.walk(TEMP_DIR):
-            for file in files:
-                os.remove(os.path.join(root, file))
-        os.rmdir(TEMP_DIR)
 
 if __name__ == "__main__":
-    put_and_check_parameters()
-    add_blank_pages()
-    create_booklet()
-    save_booklet()
+    input_pdf, output_pdf, papers_per_booklet, cover_pages = parse_arguments()
+    
+    processor = BookletProcessor(input_pdf, output_pdf, papers_per_booklet, cover_pages)
+    processor.process()
+    
     print("El archivo se ha guardado correctamente.")
-
-'''
-El código recibe el archivo "input.pdf", agrega dos carillas en blanco al inicio y al final
-y lo transforma en cuadernillos de 10 hojas en orden para imprimir doble faz. 
-Finalmente, toma el resultado y lo guarda en "output_booklet.pdf".
-
-"output_booklet.pdf" debe imprimirse de la siguiente manera:
-2 carillas por hoja, doble faz, en orden de lectura de izquierda a derecha y de arriba 
-hacia abajo.
-Los margenes no se ajustan automáticamente, por lo que es necesario configurarlos en la
-impresora.
-'''
