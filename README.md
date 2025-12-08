@@ -38,10 +38,26 @@ python src/main.py libro.pdf libro_cuadernillo.pdf 8 2
 
 El PDF generado debe imprimirse con estas configuraciones:
 
-- **4 carillas por hoja**
-- **Doble faz** (voltear en borde largo)
-- **Sin ajustar márgenes** (configurar manualmente en la impresora)
-- Orden de lectura: izquierda a derecha, arriba hacia abajo
+### Configuración básica
+
+- **Orientación**: Horizontal/Apaisada (Landscape)
+- **Impresión**: Doble cara
+- **Voltear en**: Borde largo (Long Edge / Flip on Long Edge)
+- **Páginas por hoja de un lado**: 2
+- **Orden de las páginas**: Izquierda a derecha, arriba hacia abajo
+
+### Configuración de márgenes
+
+- **Sin escalar ni ajustar**: Tamaño real (100%)
+- **Sin márgenes automáticos**: Desactivar "Ajustar al área imprimible"
+
+### Pasos recomendados
+
+1. Abrir el PDF generado
+2. Seleccionar impresión doble cara con volteo en borde largo
+3. Configurar 4 páginas por hoja en orientación horizontal
+4. Desactivar cualquier ajuste automático de escala o márgenes
+5. Imprimir todas las páginas en orden
 
 ## Requisitos
 
