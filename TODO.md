@@ -1,1 +1,2 @@
 - Opción para agregar mas espaciado entre las dos carillas de una cara de hoja.
+- Agregar diseño para hacer huecos en el centro en un costado de las hojas. para el coso ese.
