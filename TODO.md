@@ -1,0 +1,1 @@
+- Opción para agregar mas espaciado entre las dos carillas de una cara de hoja.
