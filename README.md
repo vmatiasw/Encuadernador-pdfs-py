@@ -17,6 +17,8 @@ Transforma un PDF normal en un PDF reorganizado para imprimir como cuadernillo:
 python src/main.py <entrada.pdf> <salida.pdf> <hojas_por_cuadernillo> [páginas_tapa]
 ```
 
+Para modificar los pdfs antes de crear el cuadernillo a partir de un unico pdf son utiles los comandos de `qpdf` y `poppler-utils` incluidos en el contenedor Docker.
+
 ### Parámetros
 
 - `entrada.pdf`: Archivo PDF original
@@ -74,7 +76,7 @@ INPUT_DIR=./mis-pdfs
 OUTPUT_DIR=./mis-pdfs
 INPUT_FILE=mi-libro.pdf
 OUTPUT_FILE=mi-libro-cuadernillo.pdf
-PAPERS_PER_BOOKLET=10
+PAPERS_PER_BOOKLET=10 # 4*PAPERS_PER_BOOKLET carillas por cuadernillo
 COVER_PAGES=0
 ```
 
@@ -92,3 +94,45 @@ docker-compose up
 - `OUTPUT_FILE`: Nombre del archivo de salida (se creará en OUTPUT_DIR)
 - `PAPERS_PER_BOOKLET`: Hojas por cuadernillo (entre 6 y 12)
 - `COVER_PAGES`: Páginas de tapa
+
+### Usar comandos qpdf y poppler-utils con Docker
+
+El contenedor incluye qpdf y poppler-utils para manipular PDFs. Puedes ejecutar comandos de tres maneras:
+
+**1. Ejecutar de a un comando único:**
+
+```bash
+# Unir PDFs - Opción 1: pdfunite (MÁS SIMPLE)
+docker-compose run --rm encuadernador pdfunite /app/input/file1.pdf /app/input/file2.pdf /app/output/merged.pdf
+
+# Extraer páginas específicas
+docker-compose run --rm encuadernador qpdf /app/input/input.pdf --pages . 1-7,12 -- /app/output/extracted.pdf
+
+# Rotar páginas
+docker-compose run --rm encuadernador qpdf /app/input/input.pdf --rotate=+90:1-7,12 -- /app/output/rotated.pdf
+
+# Reparar el PDF corrupto
+qpdf --linearize /app/input/file.pdf /app/output/file-reparado.pdf
+```
+
+**2. Modo interactivo (ejecutar varios comandos):**
+
+```bash
+# Iniciar shell interactivo
+docker-compose run --rm encuadernador bash
+
+# Dentro del contenedor puedes ejecutar:
+pdfunite /app/input/resumen.pdf /app/input/ResumenLenguajes.pdf /app/output/resumenLenguajes.pdf
+qpdf /app/input/input.pdf --pages . 1-7,12 -- /app/output/extracted.pdf
+qpdf /app/input/input.pdf --rotate=+90:1-7,12 -- /app/output/rotated.pdf
+exit
+```
+
+**Notas de qpdf**:
+
+- Antes del archivo de salida es obligatorio el `--`.
+- En vez de especificar un archivo de salida, puedes usar `--replace-input` para sobrescribir el archivo original.
+
+**Notas de poppler-utils**:
+
+- aun ninguna
